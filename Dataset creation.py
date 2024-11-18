@@ -9,83 +9,88 @@ import numpy as np
 warnings.filterwarnings('ignore')
 
 # Suppress TensorFlow logs
-import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # To show only errors
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=True, min_detection_confidence=0.3)
 
-# Directory with images
-DATA_DIR = './data'
+# Base directory to store data
+DATA_DIR = './data/asl'
+
 print(f"Using data directory: {DATA_DIR}")
 
 data = []
 labels = []
 
-# Define the expected feature length
+# Define the expected feature length (21 landmarks * 2 for x and y)
 expected_feature_length = 84
 
 # Verify if the directory exists
 if not os.path.exists(DATA_DIR):
     print(f"Directory '{DATA_DIR}' does not exist.")
 else:
+    # Loop through each letter/number folder (e.g., 'A', 'B', ..., 'Z', '0', '1', ...)
     for dir_ in os.listdir(DATA_DIR):
         dir_path = os.path.join(DATA_DIR, dir_)
-        if not os.listdir(dir_path):
-            print(f"Skipping empty directory: {dir_}")
+
+        # Skip if the item is not a directory (we expect directories for each letter/number)
+        if not os.path.isdir(dir_path):
             continue
 
         print(f"Processing directory: {dir_path}")
 
+        # Loop through each image in the subdirectory (e.g., 'A', 'B', etc.)
         for img_path in os.listdir(dir_path):
-            data_aux = []
-            x_ = []
-            y_ = []
+            img_full_path = os.path.join(dir_path, img_path)
 
-            img = cv2.imread(os.path.join(dir_path, img_path))
-            if img is None:
-                print(f"Failed to read image: {img_path}")
+            # Check if the file has a valid image extension
+            valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
+            if not any(img_path.lower().endswith(ext) for ext in valid_extensions):
+                print(f"Skipping non-image file: {img_path}")
                 continue
 
+            # Read the image
+            img = cv2.imread(img_full_path)
+
+            # If image is not read successfully, skip it
+            if img is None:
+                print(f"Failed to read image: {img_full_path}")
+                continue
+
+            # Convert the image to RGB for MediaPipe processing
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             results = hands.process(img_rgb)
 
+            # If landmarks are detected, process them
             if results.multi_hand_landmarks:
+                print(f"Landmarks detected in {img_full_path}")
                 for hand_landmarks in results.multi_hand_landmarks:
-                    x_.clear()
-                    y_.clear()
-                    data_aux.clear()
+                    # Extract x and y coordinates for each landmark
+                    x_coords = [landmark.x for landmark in hand_landmarks.landmark]
+                    y_coords = [landmark.y for landmark in hand_landmarks.landmark]
 
-                    for i in range(len(hand_landmarks.landmark)):
-                        x = hand_landmarks.landmark[i].x
-                        y = hand_landmarks.landmark[i].y
-                        x_.append(x)
-                        y_.append(y)
+                    # Normalize the coordinates by subtracting the minimum x and y values
+                    data_aux = []
+                    min_x, min_y = min(x_coords), min(y_coords)
+                    for landmark in hand_landmarks.landmark:
+                        data_aux.append(landmark.x - min_x)  # Normalize x
+                        data_aux.append(landmark.y - min_y)  # Normalize y
 
-                    for i in range(len(hand_landmarks.landmark)):
-                        x = hand_landmarks.landmark[i].x
-                        y = hand_landmarks.landmark[i].y
-                        data_aux.append(x - min(x_))
-                        data_aux.append(y - min(y_))
+                    # Ensure the feature length is 84 (21 landmarks * 2 for x and y)
+                    if len(data_aux) < expected_feature_length:
+                        # Pad with zeros if the length is shorter than expected
+                        data_aux = np.pad(data_aux, (0, expected_feature_length - len(data_aux)), mode='constant')
+                    elif len(data_aux) > expected_feature_length:
+                        # Truncate if the length is longer than expected
+                        data_aux = data_aux[:expected_feature_length]
 
-                    # Ensure feature length is 84
-                    if len(data_aux) == expected_feature_length:
-                        data.append(data_aux)
-                        labels.append(dir_)
-                    else:
-                        # If feature length is incorrect, pad or truncate the data
-                        if len(data_aux) < expected_feature_length:
-                            data_aux = np.pad(data_aux, (0, expected_feature_length - len(data_aux)))
-                        else:
-                            data_aux = data_aux[:expected_feature_length]
-                        
-                        data.append(data_aux)
-                        labels.append(dir_)
+                    # Append the feature data and label (class) to the dataset
+                    labels.append(dir_)  # Use the folder name (A-Z, 0-9) directly as the label
+                    data.append(data_aux)
 
-    # Save data using pickle
+    # Save the data and labels using pickle
     with open('data.pickle', 'wb') as f:
         pickle.dump({'data': data, 'labels': labels}, f)
 
     print("Data collection and saving complete.")
-
