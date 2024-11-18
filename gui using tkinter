@@ -1,0 +1,182 @@
+import tkinter as tk
+from tkinter import Frame, Label, Button, Toplevel
+import cv2
+from PIL import Image, ImageTk
+import mediapipe as mp
+import numpy as np
+import pickle
+import time
+
+# Load the trained model
+with open('model.p', 'rb') as f:
+    model_dict = pickle.load(f)
+model = model_dict['model']
+
+# Initialize MediaPipe and OpenCV
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
+hands = mp_hands.Hands(min_detection_confidence=0.7)
+cap = cv2.VideoCapture(0)  # Use 0 for default camera
+
+# Initialize Tkinter window
+root = tk.Tk()
+root.title("Sign Language Detection")
+root.geometry("1000x600")
+
+# Variables for displaying recognized text and accuracy
+recognized_text = ""
+current_character = ""
+accuracy = 0.0
+last_recognition_time = time.time()  # Track the last recognition time
+gesture_recognition_delay = 1.0  # Delay before recognizing gestures
+
+# Update the format_text function to only add a new line when the current line reaches the max length
+def format_text(text, max_length=15, max_lines=10):
+    """Inserts line breaks after every max_length characters and limits to max_lines without reformatting existing lines."""
+    lines = text.split("\n")
+    if len(lines[-1]) > max_length:
+        new_line_parts = [lines[-1][i:i + max_length] for i in range(0, len(lines[-1]), max_length)]
+        lines = lines[:-1] + new_line_parts
+
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+
+    return "\n".join(lines)
+
+# Update process_frame to format text when updating recognized_text
+def process_frame(frame):
+    """Processes the frame to detect hand landmarks, predict characters, and update global variables for recognized text and accuracy."""
+    global recognized_text, current_character, accuracy, last_recognition_time
+
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(frame_rgb)
+
+    if results.multi_hand_landmarks:
+        for landmarks in results.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, landmarks, mp_hands.HAND_CONNECTIONS)
+
+            # Extract and normalize hand landmarks for model prediction
+            data_aux = []
+            x_ = [landmark.x for landmark in landmarks.landmark]
+            y_ = [landmark.y for landmark in landmarks.landmark]
+
+            for landmark in landmarks.landmark:
+                data_aux.append(landmark.x - min(x_))
+                data_aux.append(landmark.y - min(y_))
+
+            data_aux = np.array(data_aux).reshape(1, -1)
+
+            # Pad or truncate data if necessary to ensure correct input length for model
+            if data_aux.shape[1] < 84:
+                data_aux = np.pad(data_aux, ((0, 0), (0, 84 - data_aux.shape[1])), 'constant')
+            elif data_aux.shape[1] > 84:
+                data_aux = data_aux[:, :84]
+
+            # Predict gesture if enough time has passed since last recognition
+            if time.time() - last_recognition_time > gesture_recognition_delay:
+                prediction_proba = model.predict_proba(data_aux)
+                prediction = model.predict(data_aux)
+
+                # Update the recognized character and accuracy
+                current_character = prediction[0]
+                accuracy = prediction_proba[0][np.argmax(prediction_proba)]
+
+                if accuracy > 0.5:
+                    recognized_text += current_character
+                    recognized_text = format_text(recognized_text)
+                    output_label.config(text=recognized_text)
+                    last_recognition_time = time.time()
+
+# Function to update the video feed
+def update_video_feed():
+    """Captures and displays video frames, processes them, and updates the GUI with recognized text and character accuracy."""
+    ret, frame = cap.read()
+    if ret:
+        process_frame(frame)
+
+        # Display recognized character and accuracy
+        cv2.putText(frame, f'Character: {current_character}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(frame, f'Accuracy: {accuracy:.2f}', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        imgtk = ImageTk.PhotoImage(image=img)
+        video_label.imgtk = imgtk
+        video_label.configure(image=imgtk)
+
+    output_label.config(text=recognized_text)
+    main_frame.after(10, update_video_feed)
+
+# Function to open the help window
+def open_help_window():
+    """Displays a help window with application instructions."""
+    help_window = Toplevel(root)
+    help_window.title("Help")
+    help_window.geometry("400x300")
+
+    help_text = """This application detects sign language gestures using a trained model.
+    
+Instructions:
+1. Start the application to begin video feed.
+2. Make your sign language gestures in front of the camera.
+3. The recognized characters will be displayed on the right side.
+4. Use the Reset button to clear the recognized text.
+5. Use the Backspace button to remove the last character.
+6. Click Exit to close the application."""
+    
+    Label(help_window, text=help_text, justify="left", padx=10, pady=10, wraplength=380).pack()
+
+# Functions for buttons
+def start_app():
+    """Starts the application and begins the video feed."""
+    start_frame.pack_forget()
+    main_frame.pack(fill="both", expand=True)
+    update_video_feed()
+
+def exit_app():
+    """Releases the camera and closes the application."""
+    cap.release()
+    root.quit()
+
+def reset_text():
+    """Clears the recognized text and updates the display."""
+    global recognized_text
+    recognized_text = ""
+    output_label.config(text=format_text(recognized_text))
+
+def backspace_text():
+    """Removes the last character from the recognized text and updates the display."""
+    global recognized_text
+    recognized_text = recognized_text[:-1]
+    output_label.config(text=format_text(recognized_text))
+
+# Start screen
+start_frame = Frame(root)
+Label(start_frame, text="Sign Language Detection", font=("Arial", 24)).pack(pady=20)
+Button(start_frame, text="Start", font=("Arial", 18), command=start_app).pack()
+start_frame.pack(fill="both", expand=True)
+
+# Main screen
+main_frame = Frame(root)
+
+# Video display
+video_label = Label(main_frame)
+video_label.pack(side="left", padx=10, pady=10)
+
+# Output display
+output_frame = Frame(main_frame)
+output_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
+Label(output_frame, text="Output", font=("Arial", 18)).pack()
+
+# Output label
+output_label = Label(output_frame, text="", font=("Arial", 24), bg="white", width=20, height=5, relief="solid", bd=2)
+output_label.pack(pady=10)
+
+# Control buttons in a single row directly below the output label
+control_frame = Frame(output_frame)
+control_frame.pack(fill="x", pady=10)
+Button(control_frame, text="Help", command=open_help_window).grid(row=0, column=0, padx=5, pady=5)
+Button(control_frame, text="Reset", command=reset_text).grid(row=0, column=1, padx=5, pady=5)
+Button(control_frame, text="Backspace", command=backspace_text).grid(row=0, column=2, padx=5, pady=5)
+Button(control_frame, text="Exit", command=exit_app).grid(row=0, column=3, padx=5, pady=5)
+
+root.mainloop()
