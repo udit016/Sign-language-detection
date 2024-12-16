@@ -23,6 +23,12 @@ root = tk.Tk()
 root.title("Sign Language Detection")
 root.geometry("1000x600")
 
+# Load and resize the background image to fit the window size
+image_path = r"C:\Users\Dell\Downloads\Brown.png"
+background_image = Image.open(image_path)
+background_image = background_image.resize((1000, 600), Image.Resampling.LANCZOS)  # Resize to match the window size
+background_photo = ImageTk.PhotoImage(background_image)
+
 # Variables for displaying recognized text and accuracy
 recognized_text = ""
 current_character = ""
@@ -149,11 +155,40 @@ def backspace_text():
     recognized_text = recognized_text[:-1]
     output_label.config(text=format_text(recognized_text))
 
-# Start screen
+def open_image_window():
+    """Opens a window with an image."""
+    image_window = Toplevel(root)
+    image_window.title("Image Window")
+    image_window.geometry("600x400")   
+    # Load and display the image
+    image_path = r"C:\Users\Dell\Downloads\download (3).jpeg"  # Update this path later
+    image = Image.open(image_path)
+    image = image.resize((500, 300), Image.Resampling.LANCZOS)
+    image_photo = ImageTk.PhotoImage(image)
+
+    image_label = Label(image_window, image=image_photo)
+    image_label.image = image_photo  # Keep a reference to the image
+    image_label.pack(fill="both", expand=True) 
+
+
+# Start frame
 start_frame = Frame(root)
-Label(start_frame, text="Sign Language Detection", font=("Arial", 24)).pack(pady=20)
-Button(start_frame, text="Start", font=("Arial", 18), command=start_app).pack()
 start_frame.pack(fill="both", expand=True)
+
+# Add the background image
+background_label = Label(start_frame, image=background_photo)
+background_label.place(relwidth=1, relheight=1)  # Cover the whole frame
+
+
+# Add the Start button
+Button(
+    start_frame,
+    text="Start",
+    font=("Arial", 18, "bold"),
+    bg="yellow",
+    fg="black",
+    command=start_app  # Replace with your app start function
+).place(relx=0.73, rely=0.6, anchor="center")  # Button placed below the label
 
 # Main screen
 main_frame = Frame(root)
@@ -165,7 +200,8 @@ video_label.pack(side="left", padx=10, pady=10)
 # Output display
 output_frame = Frame(main_frame)
 output_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
-Label(output_frame, text="Output", font=("Arial", 18)).pack()
+Label(output_frame, text="OUTPUT", fg="black", font=("Arial", 18, "bold")).pack()
+
 
 # Output label
 output_label = Label(output_frame, text="", font=("Arial", 24), bg="white", width=20, height=5, relief="solid", bd=2)
@@ -174,9 +210,11 @@ output_label.pack(pady=10)
 # Control buttons in a single row directly below the output label
 control_frame = Frame(output_frame)
 control_frame.pack(fill="x", pady=10)
-Button(control_frame, text="Help", command=open_help_window).grid(row=0, column=0, padx=5, pady=5)
-Button(control_frame, text="Reset", command=reset_text).grid(row=0, column=1, padx=5, pady=5)
-Button(control_frame, text="Backspace", command=backspace_text).grid(row=0, column=2, padx=5, pady=5)
-Button(control_frame, text="Exit", command=exit_app).grid(row=0, column=3, padx=5, pady=5)
+
+Button(control_frame, text="Help", bg="yellow", fg="black", command=open_help_window).grid(row=0, column=0, padx=5, pady=5)
+Button(control_frame, bg="yellow", fg="black", text="Reset", command=reset_text).grid(row=0, column=1, padx=5, pady=5)
+Button(control_frame, bg="yellow", fg="black", text="Backspace", command=backspace_text).grid(row=0, column=2, padx=5, pady=5)
+Button(control_frame, bg="yellow", fg="black", text="Exit", command=exit_app).grid(row=0, column=3, padx=5, pady=5)
+Button(control_frame, text="Open Image",bg="yellow", fg="black", command=open_image_window).grid(row=0, column=4, padx=5, pady=5)
 
 root.mainloop()
